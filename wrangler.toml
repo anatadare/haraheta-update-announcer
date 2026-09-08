@@ -18,7 +18,7 @@ kv_namespaces = [
 #   AI_MODEL                -> nama model sesuai router-nya, contoh: openai/gpt-4o-mini
 #   TELEGRAM_BOT_TOKEN      -> dari @BotFather
 #   TELEGRAM_CHANNEL_ID     -> id/username channel pengumuman, misal "@haraheta_updates"
-#   TWITTER_CONSUMER_KEY
-#   TWITTER_CONSUMER_SECRET
-#   TWITTER_ACCESS_TOKEN
-#   TWITTER_ACCESS_SECRET
+#
+# X (Twitter) SENGAJA TIDAK di-auto-post (posting via API X sekarang
+# berbayar per-post) -- draft teks untuk X disertakan di pesan Telegram,
+# tinggal di-copy manual.
