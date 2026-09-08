@@ -7,8 +7,12 @@
 //      yang nentuin "layak diumumkan atau enggak" & kategorinya lewat
 //      ATURAN TETAP, BUKAN AI (sesuai requirement kamu).
 //   4. Kalau layak & belum pernah diumumkan (lib/kv.js), generate
-//      copywriting Bahasa Indonesia (lib/gemini.js).
-//   5. Publish ke Telegram (lib/telegram.js) + X (lib/twitter.js).
+//      copywriting Bahasa Indonesia (lib/ai.js) — 2 versi: versi Telegram
+//      & versi X.
+//   5. Auto-publish ke Telegram (lib/telegram.js). Versi X-nya SENGAJA
+//      TIDAK di-post otomatis (posting X API sekarang berbayar per-post) —
+//      draft teksnya disertakan di pesan Telegram yang sama, tinggal
+//      di-copy manual buat di-post ke X.
 //
 // Semua langkah "best effort per commit": 1 commit gagal diproses (misal
 // AI error) gak bikin commit lain di push yang sama ikut gagal.
@@ -18,7 +22,6 @@ import { classifyCommit } from "./lib/classify.js";
 import { verifyGithubSignature } from "./lib/verify.js";
 import { generateAnnouncementCopy } from "./lib/ai.js";
 import { postToTelegram } from "./lib/telegram.js";
-import { postToX } from "./lib/twitter.js";
 import { alreadyAnnounced, markAnnounced } from "./lib/kv.js";
 
 async function processCommit(commit, env) {
@@ -48,26 +51,28 @@ async function processCommit(commit, env) {
     filesChanged,
   });
 
-  const finalX = `${categoryMeta.emoji} ${copy.text_x}`;
-  const finalTelegram = `${categoryMeta.emoji} *${APP_NAME} - ${categoryMeta.title}*\n\n${copy.text_telegram}`;
+  // Pesan Telegram berisi 2 bagian: pengumuman resmi (auto-post ke
+  // channel) + draft khusus buat X yang tinggal di-copy-paste manual.
+  const finalTelegram = [
+    `${categoryMeta.emoji} *${APP_NAME} - ${categoryMeta.title}*`,
+    "",
+    copy.text_telegram,
+    "",
+    "—",
+    "_Draft untuk X (copy-paste manual):_",
+    copy.text_x,
+  ].join("\n");
 
-  const [telegramResult, twitterResult] = await Promise.allSettled([
-    postToTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHANNEL_ID, finalTelegram),
-    postToX(
-      {
-        consumerKey: env.TWITTER_CONSUMER_KEY,
-        consumerSecret: env.TWITTER_CONSUMER_SECRET,
-        accessToken: env.TWITTER_ACCESS_TOKEN,
-        accessSecret: env.TWITTER_ACCESS_SECRET,
-      },
-      finalX
-    ),
-  ]);
+  let telegramStatus = "fulfilled";
+  let telegramError;
+  try {
+    await postToTelegram(env.TELEGRAM_BOT_TOKEN, env.TELEGRAM_CHANNEL_ID, finalTelegram);
+  } catch (err) {
+    telegramStatus = "rejected";
+    telegramError = String(err?.message || err);
+  }
 
-  // Ditandai "sudah diumumkan" begitu MINIMAL SATU platform berhasil —
-  // supaya kalau 1 platform gagal (misal X kena rate-limit), retry manual
-  // gak bikin dobel-post di platform yang tadi udah sukses.
-  if (telegramResult.status === "fulfilled" || twitterResult.status === "fulfilled") {
+  if (telegramStatus === "fulfilled") {
     await markAnnounced(env.ANNOUNCED_KV, sha);
   }
 
@@ -75,10 +80,8 @@ async function processCommit(commit, env) {
     sha,
     ok: true,
     category: info.category,
-    telegram: telegramResult.status,
-    twitter: twitterResult.status,
-    telegramError: telegramResult.status === "rejected" ? String(telegramResult.reason) : undefined,
-    twitterError: twitterResult.status === "rejected" ? String(twitterResult.reason) : undefined,
+    telegram: telegramStatus,
+    telegramError,
   };
 }
 
