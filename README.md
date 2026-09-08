@@ -1,6 +1,8 @@
 # Haraheta Update Announcer
 
-Agent otomatis yang mengumumkan update fitur Haraheta ke **X** dan **channel Telegram**, dipicu oleh GitHub webhook. Jalan 100% di Cloudflare Workers — tanpa VPS, tanpa server yang harus dinyalain terus.
+Agent otomatis yang mengumumkan update fitur Haraheta ke **channel Telegram**, dipicu oleh GitHub webhook, plus menyiapkan draft teks siap-pakai untuk **X** yang tinggal di-copy manual. Jalan 100% di Cloudflare Workers — tanpa VPS, tanpa server yang harus dinyalain terus.
+
+> Kenapa X gak auto-post? Sejak 2026 posting lewat X API berbayar per-post (gak ada tier gratis lagi buat developer baru). Jadi biar gak nambah biaya, agent ini cuma auto-post ke Telegram (gratis) dan menyiapkan draft teks X di pesan Telegram yang sama — tinggal kamu copy-paste manual ke X.
 
 ## Alur
 
@@ -15,12 +17,14 @@ GitHub Webhook ──POST──▶ Cloudflare Worker (/webhook/github)
 2. Loop tiap commit → klasifikasi (ATURAN TETAP, bukan AI):
      - layak diumumkan? (public/internal)
      - kategori apa? (fitur baru / bug / keamanan / maintenance / update besar)
-3. Kalau layak → Gemini bikin copywriting Bahasa Indonesia
-4. Publish ke Telegram + X (paralel, saling gak nge-block)
+3. Kalau layak → AI (router kamu) bikin 2 draft copywriting Bahasa Indonesia:
+     - versi Telegram (auto-post)
+     - versi X (disertakan di pesan Telegram yang sama, buat di-copy manual)
+4. Publish ke Telegram
 5. Tandai commit itu "sudah diumumkan" di KV (anti dobel-post)
 ```
 
-**Penting:** yang menentukan "ini layak diumumkan atau tidak" adalah aturan di `src/config.js`, **bukan AI**. AI (Gemini) cuma dipanggil untuk mengubah commit yang sudah lolos filter menjadi kalimat promosi. Ini sesuai requirement kamu: GitHub/webhook yang mendeteksi perubahan, AI cuma tugas memahami & menulis copy.
+**Penting:** yang menentukan "ini layak diumumkan atau tidak" adalah aturan di `src/config.js`, **bukan AI**. AI cuma dipanggil untuk mengubah commit yang sudah lolos filter menjadi kalimat promosi. Ini sesuai requirement kamu: GitHub/webhook yang mendeteksi perubahan, AI cuma tugas memahami & menulis copy.
 
 ## Cara developer mengontrol pengumuman
 
@@ -49,12 +53,14 @@ Semua aturan ini bisa kamu ubah di `src/config.js` tanpa sentuh logic lain.
 ## Setup
 
 ### 1. Buat KV namespace
+Lewat dashboard Cloudflare (Storage & Databases → KV → Create a namespace) atau CLI:
 ```bash
 wrangler kv namespace create ANNOUNCED_KV
 ```
 Copy `id` yang muncul ke `wrangler.toml`.
 
 ### 2. Set secrets
+Lewat dashboard (Worker → Settings → Variables and Secrets) atau CLI:
 ```bash
 wrangler secret put GITHUB_WEBHOOK_SECRET
 wrangler secret put AI_API_KEY
@@ -62,17 +68,11 @@ wrangler secret put AI_BASE_URL
 wrangler secret put AI_MODEL
 wrangler secret put TELEGRAM_BOT_TOKEN
 wrangler secret put TELEGRAM_CHANNEL_ID
-wrangler secret put TWITTER_CONSUMER_KEY
-wrangler secret put TWITTER_CONSUMER_SECRET
-wrangler secret put TWITTER_ACCESS_TOKEN
-wrangler secret put TWITTER_ACCESS_SECRET
 ```
 
 - `AI_API_KEY` / `AI_BASE_URL` / `AI_MODEL`: kredensial router AI kamu. `src/lib/ai.js` ditulis generik pakai format "OpenAI-compatible chat completions" (`POST {AI_BASE_URL}/chat/completions`), format yang dipakai hampir semua router (OpenRouter, Groq, Together, dst) termasuk yang dijual per-API-key di Telegram. **Ganti router nanti = cukup ganti 3 secret ini, gak perlu ubah kode.**
-  - Contoh kalau pakai OpenRouter: `AI_BASE_URL=https://openrouter.ai/api/v1`, `AI_MODEL=openai/gpt-4o-mini` (atau model lain yang didukung).
   - Kalau router kamu ternyata gak pakai path `/chat/completions` atau field response-nya beda struktur, kabarin nanti — tinggal sesuaikan bagian `url` dan parsing `json?.choices?.[0]?.message?.content` di `src/lib/ai.js`.
-- `TELEGRAM_CHANNEL_ID`: username channel (`@haraheta_updates`) atau numeric chat_id. Bot harus sudah jadi admin di channel itu.
-- 4 credential Twitter: dari [X Developer Portal](https://developer.x.com), App dengan permission **Read and Write**, generate Access Token & Secret untuk akun @Haraheta sendiri (bukan App-only Bearer token — itu read-only).
+- `TELEGRAM_CHANNEL_ID`: username channel (`@haraheta_updates`) atau numeric chat_id. Bot harus sudah jadi admin di channel itu dengan izin post message.
 
 ### 3. Deploy
 ```bash
@@ -82,17 +82,21 @@ npm run deploy
 Worker kamu akan punya URL seperti `https://haraheta-update-announcer.<subdomain>.workers.dev`.
 
 ### 4. Pasang webhook di GitHub
-Repo Haraheta → **Settings → Webhooks → Add webhook**:
+Repo Haraheta (repo lama, bukan repo agent ini) → **Settings → Webhooks → Add webhook**:
 - Payload URL: `https://haraheta-update-announcer.<subdomain>.workers.dev/webhook/github`
 - Content type: `application/json`
 - Secret: sama persis dengan `GITHUB_WEBHOOK_SECRET`
 - Events: pilih **"Just the push event"**
 
-Selesai — tiap push ke `main`/`master` otomatis dicek dan diumumkan kalau layak.
+Selesai — tiap push ke `main`/`master` otomatis dicek, diumumkan ke Telegram kalau layak, dan draft teks X-nya ikut nongol di pesan yang sama.
+
+## Kalau nanti mau balikin auto-post ke X
+
+Aturan/keputusan publik-privat sudah siap; tinggal tambah lagi 1 file kecil (`src/lib/twitter.js`, signing OAuth1.0a ke `POST /2/tweets`) dan panggil di `src/index.js` — versi sebelumnya sudah pernah dibuat, tinggal diaktifkan lagi kalau kamu siap dengan biaya pay-per-use-nya X.
 
 ## Batasan versi ini (bahan diskusi besok)
 
 - Konteks AI saat ini cuma dari commit message + nama file yang berubah, belum baca isi diff/changelog secara mendalam.
-- Belum ada notifikasi ke admin kalau posting ke X/Telegram gagal (sekarang cuma balik di response JSON webhook).
-- Belum bahas biaya: tier X API (Free tier `POST /2/tweets` ada limit bulanan), Cloudflare Workers (free tier cukup untuk kebutuhan ini), Gemini API (gemini-3.6-flash murah per-request).
+- Belum ada notifikasi ke admin kalau posting ke Telegram gagal (sekarang cuma balik di response JSON webhook).
+- Belum bahas biaya: Cloudflare Workers (free tier cukup untuk kebutuhan ini), biaya per-request router AI kamu.
 - Belum ada rate-limit/anti-spam kalau 1 push punya banyak commit sekaligus.
