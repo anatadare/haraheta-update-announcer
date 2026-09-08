@@ -5,7 +5,7 @@ compatibility_date = "2025-01-01"
 # Ganti "id" di bawah dengan ID KV namespace kamu sendiri.
 # Buat dulu dengan: wrangler kv namespace create ANNOUNCED_KV
 kv_namespaces = [
-  { binding = "ANNOUNCED_KV", id = "GANTI_DENGAN_ID_KV_NAMESPACE_KAMU" }
+  { binding = "ANNOUNCED_KV", id = "f5dfa09af3a34ea9a6645f2e0611ea26" }
 ]
 
 # Semua secret (token/API key) di-set lewat `wrangler secret put NAMA_SECRET`,
