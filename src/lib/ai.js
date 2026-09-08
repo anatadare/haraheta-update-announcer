@@ -6,16 +6,20 @@
 // copywriting — kategori dan keputusan publik/privat sudah ditentukan
 // sebelumnya oleh aturan tetap, bukan oleh AI.
 //
-// SENGAJA dibikin generik: pakai format "OpenAI-compatible chat
-// completions" (`POST {AI_BASE_URL}/chat/completions`), format yang
-// dipakai HAMPIR SEMUA router AI (OpenRouter, Groq, Together, dst) dan
-// juga banyak provider "reseller/router" yang dijual per-API-key.
+// Pakai format "Anthropic Messages API" (`POST {AI_BASE_URL}/v1/messages`,
+// header `x-api-key` + `anthropic-version`), format yang dipakai router
+// custom kayak jerouter (dan juga API Claude asli). BUKAN format
+// OpenAI-compatible (`/chat/completions` + `Authorization: Bearer`).
 //
-// Kalau nanti ganti provider, CUKUP ganti 3 secret ini (gak perlu sentuh
-// kode sama sekali):
-//   AI_BASE_URL -> contoh: https://openrouter.ai/api/v1
-//   AI_API_KEY  -> api key dari router-nya
-//   AI_MODEL    -> nama model sesuai router-nya, contoh: "openai/gpt-4o-mini"
+// Kalau nanti ganti router yang formatnya sama (masih Anthropic-style),
+// CUKUP ganti 3 secret ini (gak perlu sentuh kode sama sekali):
+//   AI_BASE_URL -> contoh: https://je.jerouter.web.id  (JANGAN pakai "/v1" di akhir, itu udah ditambahin di kode)
+//   AI_API_KEY  -> api key dari router-nya (dikirim lewat header x-api-key)
+//   AI_MODEL    -> nama model sesuai router-nya, contoh: "big-pickle"
+//
+// Kalau nanti pindah ke router yang formatnya OpenAI-compatible
+// (OpenRouter/Groq/Together/dll), kode di bawah PERLU diubah lagi
+// (endpoint, header auth, dan cara ambil teks dari response beda).
 
 function buildPrompt({ appName, categoryTitle, description, scope, filesChanged }) {
   return [
@@ -59,20 +63,18 @@ export async function generateAnnouncementCopy(env, params) {
 
   const body = {
     model,
+    max_tokens: 1024,
     messages: [{ role: "user", content: buildPrompt(params) }],
-    // Sebagian besar router support ini (format OpenAI). Kalau model/router
-    // tertentu kamu gak support response_format, hapus baris ini saja --
-    // parsing di bawah tetap jalan karena udah ada stripCodeFence + fallback.
-    response_format: { type: "json_object" },
     temperature: 0.7,
   };
 
-  const url = `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+  const url = `${baseUrl.replace(/\/$/, "")}/v1/messages`;
   const res = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
     },
     body: JSON.stringify(body),
   });
@@ -82,7 +84,15 @@ export async function generateAnnouncementCopy(env, params) {
     throw new Error(`ai_http_error: ${res.status} ${json ? JSON.stringify(json).slice(0, 500) : ""}`);
   }
 
-  const rawText = json?.choices?.[0]?.message?.content;
+  // Response Anthropic Messages API: { content: [{ type: "text", text: "..." }, ...] }
+  const rawText = Array.isArray(json?.content)
+    ? json.content
+        .filter((block) => block?.type === "text" && typeof block.text === "string")
+        .map((block) => block.text)
+        .join("\n")
+        .trim()
+    : "";
+
   if (!rawText) {
     throw new Error(`ai_empty_response: ${JSON.stringify(json).slice(0, 300)}`);
   }
