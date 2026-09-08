@@ -1,0 +1,24 @@
+name = "haraheta-update-announcer"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# Ganti "id" di bawah dengan ID KV namespace kamu sendiri.
+# Buat dulu dengan: wrangler kv namespace create ANNOUNCED_KV
+kv_namespaces = [
+  { binding = "ANNOUNCED_KV", id = "GANTI_DENGAN_ID_KV_NAMESPACE_KAMU" }
+]
+
+# Semua secret (token/API key) di-set lewat `wrangler secret put NAMA_SECRET`,
+# JANGAN PERNAH ditulis di file ini atau di-commit ke git.
+#
+# Secret yang dibutuhkan:
+#   GITHUB_WEBHOOK_SECRET   -> secret yang sama dengan yang kamu isi di GitHub Webhook settings
+#   AI_API_KEY              -> api key dari router AI kamu (OpenRouter/Groq/Together/dll)
+#   AI_BASE_URL             -> base URL router-nya, contoh: https://openrouter.ai/api/v1
+#   AI_MODEL                -> nama model sesuai router-nya, contoh: openai/gpt-4o-mini
+#   TELEGRAM_BOT_TOKEN      -> dari @BotFather
+#   TELEGRAM_CHANNEL_ID     -> id/username channel pengumuman, misal "@haraheta_updates"
+#   TWITTER_CONSUMER_KEY
+#   TWITTER_CONSUMER_SECRET
+#   TWITTER_ACCESS_TOKEN
+#   TWITTER_ACCESS_SECRET
